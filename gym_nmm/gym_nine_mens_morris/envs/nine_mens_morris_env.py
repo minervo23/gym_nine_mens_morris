@@ -3,26 +3,29 @@ import numpy as np
 from gym import spaces
 
 
+# Definition der Pix-Klasse
 class Pix:
+    # Definition von S, W und B als Unterklasse
     class S:
-        string = 'O'
-        tup = (1, 0, 0)
-        arr = np.array(tup)
+        string = 'O' # Gibt Spielstein als String aus
+        tup = (1, 0, 0) # Tupel repräsentiert Spielstein
+        arr = np.array(tup) # Array, das ebenfalls den Spielstein repräsentiert
 
     class W:
-        string = 'W'
+        string = 'Weiss'
         tup = (0, 1, 0)
         arr = np.array(tup)
         idx = np.array([0, 2])
 
     class B:
-        string = 'B'
+        string = 'Schwarz'
         tup = (0, 0, 1)
         arr = np.array(tup)
         idx = np.array([1, 3])
 
+    # Konvertierung von Tupel zu String und umgekehrt
     tup_to_str = {
-        S.tup: '•',  # S.string,
+        S.tup: '•',
         W.tup: W.string,
         B.tup: B.string
     }
@@ -33,11 +36,11 @@ class Pix:
         B.string: B.tup
     }
 
-
 legal_moves = {
 
-    # All corners
-    (0, 0, 0): [None, None, (0, 1, 1), (0, 1, 0)],
+    # Alle Ecken
+    # Format: (position): [oben, rechts, unten, links]
+    # Wenn ein Zug nicht erlaubt ist, wird None angegeben    (0, 0, 0): [None, None, (0, 1, 1), (0, 1, 0)],
     (0, 0, 1): [(0, 1, 1), None, None, (0, 1, 2)],
     (0, 0, 2): [(0, 1, 3), (0, 1, 2), None, None],
     (0, 0, 3): [None, (0, 1, 0), (0, 1, 3), None],
@@ -67,13 +70,13 @@ legal_moves = {
     (2, 1, 1): [(2, 0, 0), (1, 1, 1), (2, 0, 1), None],
     (2, 1, 2): [None, (2, 0, 1), (1, 1, 2), (2, 0, 2)],
     (2, 1, 3): [(2, 0, 3), None, (2, 0, 2), (1, 1, 3)],
-
 }
 
 
 class NineMensMorrisEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
+    #Ähnlich wie Info Types, die für die KI gesetzt werden können
     class InfoCode:
         normal = 0
         bad_action_position = 1
@@ -81,10 +84,21 @@ class NineMensMorrisEnv(gym.Env):
         bad_kill_position = 3
 
     def __init__(self):
-        # Example when using discrete actions:
+        """
+        repräsentiert den Raum aller möglichen Aktionen, die der Agent in dieser Umgebung ausführen kann.
+        Es gibt vier unterschiedliche Typen von Entscheidungen/Aktionen, die getroffen werden können.
+        Die Zahlen (3, 2, 4, 4) bedeuten:
+        Eine Entscheidung mit 3 Optionen.
+        Eine Entscheidung mit 2 Optionen.
+        Eine Entscheidung mit 4 Optionen.
+        Noch eine Entscheidung mit 4 Optionen.
+        """
         self.action_space = spaces.MultiDiscrete((3, 2, 4, 4))
 
-        # Example for using image as input:
+        """
+        repräsentiert den Raum aller möglichen Beobachtungen oder Zustände, die der Agent in dieser Umgebung sehen kann. 
+        Es besteht aus zwei Hauptteilen.
+        """
         self.observation_space = spaces.Tuple((
             spaces.MultiDiscrete([3, 2, 4, 3]),
             spaces.MultiDiscrete([4, 9])
@@ -111,6 +125,7 @@ class NineMensMorrisEnv(gym.Env):
         else:
             raise Exception("Player must be either Pix.W or Pix.O")
 
+# Führt einen Spielzug durch und gibt den neuen Zustand des Spiels, eine Belohnung, ob das Spiel beendet ist und zusätzliche Informationen zurück.
     def step(self, action):
         """
         :param action: (tuple)
@@ -177,6 +192,7 @@ class NineMensMorrisEnv(gym.Env):
 
         return self.board
 
+    # Zeigt den aktuellen Zustand des Spiels an.
     def render(self, mode='human', close=False):
         print(f"Current Player: {self.player.string}")
         print(self.mens)
@@ -225,10 +241,15 @@ class NineMensMorrisEnv(gym.Env):
 
         if self.mens[self.player.idx][0] > 0:
             open_positions = np.transpose((self.board == Pix.S.arr).all(3).nonzero())
+            print(f"open_positions {open_positions}")
             for position in open_positions:
                 position = tuple(position)
+                print(f"position {position}")
+
                 board = np.array(self.board)
                 board[position] = self.player.arr
+                print(f"position: {position}")
+                print(f"board:\n{board}")
                 has_killed = self._has_killed(position, board)
                 if has_killed:
                     for opponent_position in opponent_positions:
