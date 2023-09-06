@@ -8,7 +8,7 @@ class RandomAgent:
 
     def choose_action(self):
         legal_actions = self.env.get_legal_actions()
-        flattened_actions = NineMensMorrisE1nvV2.flatten_actions(legal_actions)
+        flattened_actions = NineMensMorrisEnvV2.flatten_actions(legal_actions)
         random_index = np.random.randint(0, len(flattened_actions))
         return flattened_actions[random_index]
 
