@@ -3,7 +3,6 @@ import numpy as np
 from gymnasium.spaces import Discrete, Box
 from pettingzoo import AECEnv
 
-
 def env(render_mode=None):
     env = raw_env(render_mode=render_mode)
     return env
@@ -296,58 +295,3 @@ class raw_env(AECEnv):
         s.append(self.agent_selection)
         s.append(self.get_action_type(self.agent_selection))
         return tuple(s)
-
-class RandomAgent:
-    def __init__(self, agent_name):
-        self.agent_name = agent_name
-
-    def act(self, observation):
-        action_mask = observation['action_mask']
-        valid_actions = [i for i, valid in enumerate(action_mask) if valid]
-        return np.random.choice(valid_actions)
-
-
-def play_game():
-    environment = env(render_mode='human')
-    human_agent = "player_0"
-    ai_agent = "player_1"
-    random_agent = RandomAgent(ai_agent)
-
-    environment.reset()
-    done = False
-
-    while not done:
-        agent_to_act = environment.agent_selection
-        observation = environment.observe(agent_to_act)
-
-        if agent_to_act == human_agent:
-            print("Your turn!")
-            render_output = environment.render()
-            if render_output:
-                print(render_output)
-
-            valid_actions = [i for i, valid in enumerate(observation['action_mask']) if valid]
-            print("Valid actions:", valid_actions)
-            action = int(input("Choose your action: "))
-            while action not in valid_actions:
-                print("Invalid action. Try again.")
-                action = int(input("Choose your action: "))
-        else:
-            action = random_agent.act(observation)
-            environment.step(action)
-            print("AI's turn!")
-            render_output = environment.render()
-            if render_output:
-                print(render_output)
-            continue
-
-        environment.step(action)
-        done = environment.terminations[agent_to_act]
-
-    print("Game Over!")
-    render_output = environment.render()
-    if render_output:
-        print(render_output)
-
-if __name__ == "__main__":
-    play_game()
