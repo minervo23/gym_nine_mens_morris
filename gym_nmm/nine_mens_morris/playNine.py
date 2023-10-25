@@ -10,12 +10,12 @@ class AlphaZeroAgent:
         self.device = device
         self.mcts = MCTS(self.model, self.device)
 
-    def act(self, observation, environment):  # Pass the actual environment object
+    def act(self, observation, environment):
         state = observation['observation']
         action_type = observation['action_type']
 
         [self.mcts.simulate(environment) for _ in range(500)]
-        p = self.mcts.get_action_prob(environment, action_type, temperature=0.5)  # Added temperature parameter
+        p = self.mcts.get_action_prob(environment, action_type, temperature=0.5)
         valid_actions = [i for i, valid in enumerate(observation['action_mask']) if valid]
         action_probs = np.array([p[i] for i in valid_actions])
         action = np.argmax(action_probs)
@@ -52,7 +52,7 @@ def play_game():
                 print("Invalid action. Try again.")
                 action = int(input("Choose your action: "))
         else:
-            action = alpha_zero_agent.act(observation, environment)  # Pass the environment to act
+            action = alpha_zero_agent.act(observation, environment)
             print("AI's turn!")
             render_output = environment.render()
             if render_output:
