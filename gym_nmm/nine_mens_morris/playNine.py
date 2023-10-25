@@ -5,34 +5,30 @@ from gym_nmm.nine_mens_morris.nmm_alphazero import AlphaZeroNMM, MCTS
 
 
 class AlphaZeroAgent:
-
     def __init__(self, model, device):
         self.model = model
         self.device = device
-        self.mcts = MCTS(self.model)
+        self.mcts = MCTS(self.model, self.device)
 
-    def act(self, observation):
+    def act(self, observation, environment):  # Pass the actual environment object
         state = observation['observation']
         action_type = observation['action_type']
 
-        [self.mcts.simulate(state) for _ in range(100)]
-        p = self.mcts.get_action_prob(state, action_type)
+        [self.mcts.simulate(environment) for _ in range(500)]
+        p = self.mcts.get_action_prob(environment, action_type, temperature=0.5)  # Added temperature parameter
         valid_actions = [i for i, valid in enumerate(observation['action_mask']) if valid]
         action_probs = np.array([p[i] for i in valid_actions])
         action = np.argmax(action_probs)
 
         return valid_actions[action]
-
-
 def play_game():
     environment = env(render_mode='human')
     human_agent = "player_0"
-    ai_agent = "player_1"
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_path = '/home/akhil/code/reward_lab/exp/nmm/weights/model_2.pth'
+    device = torch.device("cpu")
+    model_path = '/Users/Batu-Privat/PycharmProjects/gym_nine_mens_morris2/gym_nmm/nine_mens_morris/model_2.pth'
     model = AlphaZeroNMM().to(device)
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
     alpha_zero_agent = AlphaZeroAgent(model, device)
@@ -56,7 +52,7 @@ def play_game():
                 print("Invalid action. Try again.")
                 action = int(input("Choose your action: "))
         else:
-            action = alpha_zero_agent.act(observation)
+            action = alpha_zero_agent.act(observation, environment)  # Pass the environment to act
             print("AI's turn!")
             render_output = environment.render()
             if render_output:

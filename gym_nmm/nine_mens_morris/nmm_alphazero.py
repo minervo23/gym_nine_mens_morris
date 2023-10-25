@@ -113,13 +113,29 @@ class AlphaZeroNMM(nn.Module):
 
 
 class MCTS:
-    def __init__(self, model):
+    def __init__(self, model, device=None):
         self.model = model
+        self.device = device
         self.q_sa = {}  # stores Q values for (s, a)
         self.n_sa = {}  # stores # of times edge (s, a) was visited
         self.p_s = {}  # stores initial policy returned by neural net
 
     def simulate(self, env):
+        # print sollte das Environment anzeigen
+        '''
+        ChatGPT:
+        Falsche Variable oder Parameterüberladung: Überprüfen Sie, ob Sie env irgendwo in Ihrer Methode oder Ihrem Code
+        überschrieben haben, sodass es sich jetzt auf ein numpy.ndarray anstelle des erwarteten Environment-Objekts
+        bezieht.
+        Richtiges Environment-Objekt: Stellen Sie sicher, dass das env, das Sie an die simulate-Methode
+        weitergeben, tatsächlich das korrekte Environment-Objekt ist und nicht nur ein Zustand oder eine Beobachtung
+        aus diesem Environment. Es sollte Methoden wie reset(), step() und state() haben.
+        Verwendung der Methode state(): Es könnte sein, dass das Environment, das Sie verwenden, keine Methode state() hat.
+        Überprüfen Sie die Dokumentation oder den Code des Environments, um sicherzustellen, dass eine solche
+        Methode existiert. Wenn nicht, müssen Sie vielleicht eine andere Methode verwenden oder das Environment anpassen,
+         um diese Funktionalität bereitzustellen.
+        '''
+       # print(type(env))
         s = env.state()
         obs = env.observe(env.agent_selection)
         action_mask = obs['action_mask']
@@ -174,7 +190,7 @@ class MCTS:
         # Get predictions
         self.model.eval()
         with torch.no_grad():
-            p, v = self.model(obs.float().to(device), torch.LongTensor([action_type]).to(device))  # (1, 24), (1, 1)
+            p, v = self.model(obs.float().to(self.device),torch.LongTensor([action_type]).to(self.device))  # (1, 24), (1, 1)
         p = p.cpu().numpy()[0]  # (24,)
         v = v.cpu().numpy()[0][0]  # scalar
 
@@ -191,11 +207,11 @@ class MCTS:
 
         return p, v
 
-    def get_action_prob(self, env, temperature=1):
-        s = env.state()
+    def get_action_prob(self, environment, action_type, temperature=1.0):
+        s = environment.state()
         p = [self.n_sa.get((s, a), 0) for a in range(len(self.p_s[s]))]
         p = np.array(p, dtype=np.float32) ** 1 / temperature
-        p *= env.action_masks[env.agent_selection]
+        p *= environment.action_masks[environment.agent_selection]
         return p / p.sum()
 
 
@@ -224,7 +240,7 @@ def evaluate(env, model1, model2, n_episodes):
             step += 1
             mcts = mcts_[int(step % 2 == 0)]
 
-            [mcts.simulate(env) for _ in range(10)]
+            [mcts.simulate(env) for _ in range(5)]
             p = mcts.get_action_prob(env)
             action = np.random.choice(len(p), p=p)
 
@@ -239,7 +255,7 @@ def self_play(env, mcts: MCTS):
     tuples = []
     env.reset()
     while not (env.terminations[env.agent_selection] or env.truncations[env.agent_selection]):
-        [mcts.simulate(env) for _ in range(100)]
+        [mcts.simulate(env) for _ in range(1)]
         p = mcts.get_action_prob(env)
         action = np.random.choice(len(p), p=p)
         obs = env.observe(env.agent_selection)
@@ -254,89 +270,83 @@ def self_play(env, mcts: MCTS):
 # In[17]:
 
 
-print(torch.cuda.cudaStatus.SUCCESS)
-env = nmm.env()
+if __name__ == "__main__":
+    print(torch.cuda.cudaStatus.SUCCESS)
+    env = nmm.env()
 
-device = 'cuda:0'  # 'cpu'
-model = AlphaZeroNMM().to(device)
-old_model = deepcopy(model)
-optimizer = Adam(model.parameters(), lr=1e-5, weight_decay=1e-6)
+    device = 'cpu'
+    model = AlphaZeroNMM().to(device)
+    old_model = deepcopy(model)
+    optimizer = Adam(model.parameters(), lr=1e-5, weight_decay=1e-6)
 
-losses = []
-win_rates = []
-lose_rates = []
-dataset = deque([], maxlen=50000)
+    losses = []
+    win_rates = []
+    lose_rates = []
+    dataset = deque([], maxlen=50000)
 
+    # In[18]:
 
-# In[18]:
+    for iteration in range(500):
+        """ Self Play """
+        for _ in tqdm(range(25), desc='Self-Play'):
+            mcts = MCTS(model)
+            dataset += self_play(env, mcts)
 
+        """ Train """
+        model.train()
+        for epoch in tqdm(range(10), desc='Training'):
+            loss_mean = MeanMetric()
+            for state, action_type, p, v in DataLoader(dataset, batch_size=16, shuffle=True):
+                p_pred, v_pred = model(state.float().to(device), torch.LongTensor(action_type).to(device))
+                loss = (v.to(device) - v_pred).pow(2).mean() - (p.to(device) * p_pred.log()).mean()
 
-for iteration in range(500):
-    """ Self Play """
-    for _ in tqdm(range(25), desc='Self-Play'):
-        mcts = MCTS(model)
-        dataset += self_play(env, mcts)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-    """ Train """
-    model.train()
-    for epoch in tqdm(range(10), desc='Training'):
-        loss_mean = MeanMetric()
-        for state, action_type, p, v in DataLoader(dataset, batch_size=16, shuffle=True):
-            p_pred, v_pred = model(state.float().to(device), torch.LongTensor(action_type).to(device))
-            loss = (v.to(device) - v_pred).pow(2).mean() - (p.to(device) * p_pred.log()).mean()
+                loss_mean(loss.item())
+            losses.append(loss_mean.compute())
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        """ Evaluate """
+        wins_0, loses_0 = evaluate(env, model, old_model, 10)
+        loses_1, wins_1 = evaluate(env, old_model, model, 10)
 
-            loss_mean(loss.item())
-        losses.append(loss_mean.compute())
+        win_rates.append((wins_0 + wins_1) / 2)
+        lose_rates.append((loses_0 + loses_1) / 2)
 
-    """ Evaluate """
-    wins_0, loses_0 = evaluate(env, model, old_model, 10)
-    loses_1, wins_1 = evaluate(env, old_model, model, 10)
+        # if iteration % 5 == 0:
+        #     old_model = deepcopy(model)
+        if win_rates[-1] > lose_rates[-1]:
+            old_model = deepcopy(model)
+        # else:
+        #     model = deepcopy(old_model)
 
-    win_rates.append((wins_0 + wins_1) / 2)
-    lose_rates.append((loses_0 + loses_1) / 2)
+        plot(iteration, losses, win_rates, lose_rates)
 
-    # if iteration % 5 == 0:
-    #     old_model = deepcopy(model)
-    if win_rates[-1] > lose_rates[-1]:
-        old_model = deepcopy(model)
-    # else:
-    #     model = deepcopy(old_model)
+    # In[20]:
 
-    plot(iteration, losses, win_rates, lose_rates)
+    torch.save(model.state_dict(),
+               '/Users/Batu-Privat/PycharmProjects/gym_nine_mens_morris2/gym_nmm/nine_mens_morris/model_2.pth')
 
+    # In[ ]:
 
-# In[20]:
+    #model
 
+    env.reset()
+    mcts = MCTS(model)
 
-# torch.save(model.state_dict(), '/Users/akhildevarashetti/code/reward_lab/exp/nmm/weights/model_3.pth')
-torch.save(model.state_dict(), '/home/philipp/PycharmProjects/gym_nine_mens_morris/gym_nmm/weights/model_2.pth')
+    [mcts.simulate(env) for _ in range(25)]
+    p = mcts.get_action_prob(env)
+    # action = np.random.choice(len(p), p=p)
+    action = p.argmax()
+    for i, pi in enumerate(p):
+        print(f'{i}:\t{pi}')
+    print(f'{action=}\n{env.agent_selection=}\n{env.get_action_type(env.agent_selection)}')
 
+    print(env.render())
+    env.step(action)
+    print(f'{env.rewards=}')
+    print(env.render())
 
-# In[ ]:
-
-
-model
-
-
-env.reset()
-mcts = MCTS(model)
-
-[mcts.simulate(env) for _ in range(25)]
-p = mcts.get_action_prob(env)
-# action = np.random.choice(len(p), p=p)
-action = p.argmax()
-for i, pi in enumerate(p):
-    print(f'{i}:\t{pi}')
-print(f'{action=}\n{env.agent_selection=}\n{env.get_action_type(env.agent_selection)}')
-
-print(env.render())
-env.step(action)
-print(f'{env.rewards=}')
-print(env.render())
-
-mcts = MCTS(model)
+    mcts = MCTS(model)
 

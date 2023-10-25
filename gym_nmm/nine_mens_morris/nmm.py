@@ -295,13 +295,3 @@ class raw_env(AECEnv):
         s.append(self.agent_selection)
         s.append(self.get_action_type(self.agent_selection))
         return tuple(s)
-
-class RandomAgent:
-    def __init__(self, agent_name):
-        self.agent_name = agent_name
-
-    def act(self, observation):
-        action_mask = observation['action_mask']
-        valid_actions = [i for i, valid in enumerate(action_mask) if valid]
-        return np.random.choice(valid_actions)
-
